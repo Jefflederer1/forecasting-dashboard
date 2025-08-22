@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Upload, Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, FileText, AlertCircle, Sparkles, ShoppingCart, AlertTriangle } from 'lucide-react';
 
 // --- Helper Components ---
