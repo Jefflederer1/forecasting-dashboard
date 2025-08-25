@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, LogIn } from 'lucide-react';
-import { GoogleAuth } from 'google-auth-library';
-import { google } from 'googleapis';
 
 // --- Helper Components ---
 
@@ -118,9 +116,10 @@ export default function App() {
     const [error, setError] = useState(null);
 
     // Google Sheets State
-    const [serviceAccountKey, setServiceAccountKey] = useState('');
+    const [apiKey, setApiKey] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [gapiLoaded, setGapiLoaded] = useState(false);
 
     // What-if scenario state
     const [demandChange, setDemandChange] = useState(0);
@@ -136,46 +135,51 @@ export default function App() {
     
     const [purchaseRecommendations, setPurchaseRecommendations] = useState([]);
     
-    const handleConnect = async () => {
-        setError(null);
-        if (!sheetUrl || !serviceAccountKey) {
-            setError("Please provide both the Google Sheet URL and the Service Account Key.");
+    // Load Google API script
+    useEffect(() => {
+        const scriptGapi = document.createElement('script');
+        scriptGapi.src = 'https://apis.google.com/js/api.js';
+        scriptGapi.async = true;
+        scriptGapi.defer = true;
+        scriptGapi.onload = () => window.gapi.load('client', () => setGapiLoaded(true));
+        document.body.appendChild(scriptGapi);
+
+        return () => {
+            document.body.removeChild(scriptGapi);
+        }
+    }, []);
+
+    const handleConnect = useCallback(async () => {
+        if (!sheetUrl || !apiKey) {
+            setError("Please provide both the Google Sheet URL and your API Key.");
             return;
         }
 
-        let key;
-        try {
-            key = JSON.parse(serviceAccountKey);
-        } catch (e) {
-            setError("The Service Account Key is not valid JSON. Please paste the entire file content.");
+        if (!gapiLoaded) {
+            setError("Google API client is not loaded yet. Please wait a moment and try again.");
             return;
         }
 
-        setIsLoading(true);
-
         try {
-            const auth = new GoogleAuth({
-                credentials: key,
-                scopes: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+            await window.gapi.client.init({
+                apiKey: apiKey,
+                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
             });
-
-            const authClient = await auth.getClient();
-            const sheets = google.sheets({ version: 'v4', auth: authClient });
 
             const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
             if (!spreadsheetIdMatch) {
                 setError("Invalid Google Sheet URL format.");
-                setIsLoading(false);
                 return;
             }
             const spreadsheetId = spreadsheetIdMatch[1];
 
-            const response = await sheets.spreadsheets.values.get({
+            setIsLoading(true);
+            const response = await window.gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: spreadsheetId,
                 range: 'Sheet1!A2:L',
             });
 
-            const range = response.data;
+            const range = response.result;
             if (range.values && range.values.length > 0) {
                 const parsedData = range.values.map(row => ({
                     date: row[0], parentItem: row[1], sku: row[2],
@@ -191,16 +195,17 @@ export default function App() {
                 }));
                 setData(parsedData);
                 setIsAuthenticated(true);
+                setError(null);
             } else {
-                setError("No data found in the spreadsheet. Make sure it's shared with the service account email.");
+                setError("No data found. Ensure Sheet1 has data and is shared with your Service Account's email.");
             }
         } catch (err) {
-            setError("Failed to connect. Check Sheet URL, permissions, and Service Account Key.");
-            console.error(err);
+            setError("Failed to connect. Check API Key, Sheet URL, and sharing permissions.");
+            console.error('Execute error', err);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [apiKey, sheetUrl, gapiLoaded]);
 
 
     // Memoize SKU list to prevent re-computation
@@ -454,7 +459,7 @@ export default function App() {
                         <TrendingUp className="h-10 w-10 text-indigo-400" />
                         <h1 className="text-3xl font-bold ml-3">ForecastAI</h1>
                     </div>
-                    <p className="text-center text-gray-400 mb-8">Connect to your Google Sheet using a Service Account.</p>
+                    <p className="text-center text-gray-400 mb-8">Connect to your Google Sheet using an API Key.</p>
                     
                     <div className="space-y-4">
                         <div>
@@ -462,12 +467,12 @@ export default function App() {
                             <input type="text" value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-300">Service Account Key (.json file content)</label>
-                            <textarea value={serviceAccountKey} onChange={e => setServiceAccountKey(e.target.value)} placeholder="Paste the entire content of the downloaded .json key file here." rows="6" className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-xs"></textarea>
+                            <label className="text-sm font-medium text-gray-300">Your Google API Key</label>
+                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter the API Key you created" className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                     </div>
                     
-                    <button onClick={handleConnect} disabled={isLoading} className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleConnect} disabled={isLoading || !gapiLoaded} className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         {isLoading ? <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div> : <><LogIn className="mr-2 h-5 w-5"/> Connect to Sheet</>}
                     </button>
                     {error && <p className="text-red-400 text-sm mt-4 text-center">{error}</p>}
