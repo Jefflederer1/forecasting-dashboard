@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, FileText, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, Sheet, LogIn } from 'lucide-react';
+import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, LogIn } from 'lucide-react';
 
 // --- Helper Components ---
 
@@ -122,7 +122,7 @@ export default function App() {
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [gapiLoaded, setGapiLoaded] = useState(false);
     const [gisLoaded, setGisLoaded] = useState(false);
-    let tokenClient = null;
+    const tokenClientRef = useRef(null);
 
 
     // What-if scenario state
@@ -160,28 +160,6 @@ export default function App() {
             document.body.removeChild(scriptGis);
         }
     }, []);
-
-    const handleAuthClick = useCallback(() => {
-        if (gapiLoaded && gisLoaded && clientId) {
-            tokenClient = window.google.accounts.oauth2.initTokenClient({
-                client_id: clientId,
-                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
-                callback: async (resp) => {
-                    if (resp.error !== undefined) {
-                        throw (resp);
-                    }
-                    setIsAuthorized(true);
-                    await listSheetData();
-                },
-            });
-
-            if (window.gapi.client.getToken() === null) {
-                tokenClient.requestAccessToken({ prompt: 'consent' });
-            } else {
-                tokenClient.requestAccessToken({ prompt: '' });
-            }
-        }
-    }, [gapiLoaded, gisLoaded, clientId]);
 
     const listSheetData = useCallback(async () => {
         if (!sheetUrl) {
@@ -234,6 +212,30 @@ export default function App() {
             setIsLoading(false);
         }
     }, [apiKey, sheetUrl]);
+
+
+    const handleAuthClick = useCallback(() => {
+        if (gapiLoaded && gisLoaded && clientId) {
+            tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+                callback: async (resp) => {
+                    if (resp.error !== undefined) {
+                        setError(`Authorization error: ${resp.error_description}`);
+                        return;
+                    }
+                    setIsAuthorized(true);
+                    await listSheetData();
+                },
+            });
+
+            if (window.gapi.client.getToken() === null) {
+                tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
+            } else {
+                tokenClientRef.current.requestAccessToken({ prompt: '' });
+            }
+        }
+    }, [gapiLoaded, gisLoaded, clientId, listSheetData]);
 
 
     // Memoize SKU list to prevent re-computation
