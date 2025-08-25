@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Upload, Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, FileText, AlertCircle, Sparkles, ShoppingCart, AlertTriangle } from 'lucide-react';
+import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, FileText, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, Sheet, LogIn } from 'lucide-react';
 
 // --- Helper Components ---
 
@@ -62,7 +62,7 @@ const AIInsightsCard = ({ onGenerate, insights, isLoading }) => (
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
                 </div>
             ) : (
-                <div dangerouslySetInnerHTML={{ __html: insights ? insights.replace(/\n/g, '<br />') : "Click 'Generate Briefing' to get AI-powered analysis and recommendations based on the current data and scenarios." }} />
+                <div dangerouslySetInnerHTML={{ __html: insights ? insights.replace(/\n/g, '<br />') : "Connect to Google Sheets and select SKUs to generate insights." }} />
             )}
         </div>
         <button
@@ -105,45 +105,6 @@ const PurchaseAdvisorCard = ({ recommendations }) => (
 );
 
 
-// Mock Data Generator (to simulate data if no file is uploaded)
-const generateMockData = () => {
-    const items = [
-        { parent: 'Pens', sku: 'PEN-BLK-01', vendor: 'InkFlow Inc.', price: 1.5, cost: 0.5, reorder: 1000, safety: 1500 },
-        { parent: 'Pens', sku: 'PEN-BLU-02', vendor: 'InkFlow Inc.', price: 1.5, cost: 0.5, reorder: 1200, safety: 1600 },
-        { parent: 'Bags', sku: 'BAG-TOTE-LG', vendor: 'CarryAll Co.', price: 12.0, cost: 4.5, reorder: 250, safety: 400 },
-        { parent: 'Bags', sku: 'BAG-DRAW-SM', vendor: 'CarryAll Co.', price: 7.5, cost: 2.5, reorder: 300, safety: 450 },
-        { parent: 'Mugs', sku: 'MUG-CER-11', vendor: 'Ceramix', price: 8.0, cost: 3.0, reorder: 400, safety: 500 },
-    ];
-    const data = [];
-    const today = new Date();
-    for (let i = 180; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - i);
-        const dateString = date.toISOString().split('T')[0];
-        
-        items.forEach(item => {
-            const unitsSold = Math.floor(Math.random() * (item.parent === 'Pens' ? 50 : 20)) + 10;
-            const orderCount = Math.max(1, Math.floor(unitsSold / (Math.random() * 10 + 5)));
-            data.push({
-                date: dateString,
-                parentItem: item.parent,
-                sku: item.sku,
-                unitsSold,
-                orderCount,
-                unitPrice: item.price,
-                unitCost: item.cost,
-                vendor: item.vendor,
-                currentInventory: Math.floor(Math.random() * 500) + (item.sku === 'PEN-BLK-01' ? 800 : 200), // Make one item low on stock
-                leadTime: 120,
-                reorderPoint: item.reorder,
-                safetyStock: item.safety,
-            });
-        });
-    }
-    return data;
-};
-
-
 // --- Main App Component ---
 
 export default function App() {
@@ -153,7 +114,16 @@ export default function App() {
     const [cashFlowData, setCashFlowData] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [fileName, setFileName] = useState('');
+
+    // Google Sheets State
+    const [apiKey, setApiKey] = useState('');
+    const [clientId, setClientId] = useState('');
+    const [sheetUrl, setSheetUrl] = useState('');
+    const [isAuthorized, setIsAuthorized] = useState(false);
+    const [gapiLoaded, setGapiLoaded] = useState(false);
+    const [gisLoaded, setGisLoaded] = useState(false);
+    let tokenClient = null;
+
 
     // What-if scenario state
     const [demandChange, setDemandChange] = useState(0);
@@ -168,11 +138,103 @@ export default function App() {
     const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
     
     const [purchaseRecommendations, setPurchaseRecommendations] = useState([]);
-
-    // Initial data load
+    
+    // Load Google API scripts
     useEffect(() => {
-        setData(generateMockData());
+        const scriptGapi = document.createElement('script');
+        scriptGapi.src = 'https://apis.google.com/js/api.js';
+        scriptGapi.async = true;
+        scriptGapi.defer = true;
+        scriptGapi.onload = () => window.gapi.load('client', () => setGapiLoaded(true));
+        document.body.appendChild(scriptGapi);
+
+        const scriptGis = document.createElement('script');
+        scriptGis.src = 'https://accounts.google.com/gsi/client';
+        scriptGis.async = true;
+        scriptGis.defer = true;
+        scriptGis.onload = () => setGisLoaded(true);
+        document.body.appendChild(scriptGis);
+
+        return () => {
+            document.body.removeChild(scriptGapi);
+            document.body.removeChild(scriptGis);
+        }
     }, []);
+
+    const handleAuthClick = useCallback(() => {
+        if (gapiLoaded && gisLoaded && clientId) {
+            tokenClient = window.google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+                callback: async (resp) => {
+                    if (resp.error !== undefined) {
+                        throw (resp);
+                    }
+                    setIsAuthorized(true);
+                    await listSheetData();
+                },
+            });
+
+            if (window.gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({ prompt: 'consent' });
+            } else {
+                tokenClient.requestAccessToken({ prompt: '' });
+            }
+        }
+    }, [gapiLoaded, gisLoaded, clientId]);
+
+    const listSheetData = useCallback(async () => {
+        if (!sheetUrl) {
+            setError("Please enter a valid Google Sheet URL.");
+            return;
+        }
+        
+        try {
+            await window.gapi.client.init({
+                apiKey: apiKey,
+                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
+            });
+
+            const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+            if (!spreadsheetIdMatch) {
+                setError("Invalid Google Sheet URL format.");
+                return;
+            }
+            const spreadsheetId = spreadsheetIdMatch[1];
+
+            setIsLoading(true);
+            const response = await window.gapi.client.sheets.spreadsheets.values.get({
+                spreadsheetId: spreadsheetId,
+                range: 'Sheet1!A2:L', // Assuming data starts from the second row
+            });
+
+            const range = response.result;
+            if (range.values && range.values.length > 0) {
+                const parsedData = range.values.map(row => ({
+                    date: row[0], parentItem: row[1], sku: row[2],
+                    unitsSold: parseInt(row[3]) || 0,
+                    orderCount: parseInt(row[4]) || 0,
+                    unitPrice: parseFloat(row[5]) || 0,
+                    unitCost: parseFloat(row[6]) || 0,
+                    vendor: row[7],
+                    currentInventory: parseInt(row[8]) || 0,
+                    leadTime: parseInt(row[9]) || 0,
+                    reorderPoint: parseInt(row[10]) || 0,
+                    safetyStock: parseInt(row[11]) || 0,
+                }));
+                setData(parsedData);
+                setError(null);
+            } else {
+                setError("No data found in the spreadsheet.");
+            }
+        } catch (err) {
+            setError("Error fetching data from Google Sheet. Check permissions and URL.");
+            console.error('execute error', err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [apiKey, sheetUrl]);
+
 
     // Memoize SKU list to prevent re-computation
     const skuList = useMemo(() => {
@@ -222,131 +284,83 @@ export default function App() {
 
         const historicalAggregated = Object.values(aggregated).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        setIsLoading(true);
-        setTimeout(() => {
-            const last30Days = historicalAggregated.slice(-30);
-            if (last30Days.length === 0) {
-                setForecastData([]);
-                setCashFlowData([]);
-                setIsLoading(false);
-                return;
-            }
+        const last30Days = historicalAggregated.slice(-30);
+        if (last30Days.length === 0) {
+            setForecastData([]);
+            setCashFlowData([]);
+            return;
+        }
+        
+        const totalUnits = last30Days.reduce((sum, d) => sum + d.unitsSold, 0);
+        const totalOrders = last30Days.reduce((sum, d) => sum + d.orderCount, 0);
+        const avgOrdersPerDay = totalOrders / last30Days.length;
+        const avgUnitsPerOrder = totalOrders > 0 ? totalUnits / totalOrders : 0;
+        
+        const avgPrice = data.find(d => activeSKUs.includes(d.sku))?.unitPrice || 0;
+        const avgCost = data.find(d => activeSKUs.includes(d.sku))?.unitCost || 0;
+
+        const newForecast = [];
+        const newCashFlow = [];
+        const lastDate = historicalAggregated.length > 0 ? new Date(historicalAggregated[historicalAggregated.length - 1].date) : new Date();
+
+        for (let i = 1; i <= 120; i++) {
+            const forecastDate = new Date(lastDate);
+            forecastDate.setDate(lastDate.getDate() + i);
             
-            const totalUnits = last30Days.reduce((sum, d) => sum + d.unitsSold, 0);
-            const totalOrders = last30Days.reduce((sum, d) => sum + d.orderCount, 0);
-            const avgOrdersPerDay = totalOrders / last30Days.length;
-            const avgUnitsPerOrder = totalOrders > 0 ? totalUnits / totalOrders : 0;
-            
-            const avgPrice = data.find(d => activeSKUs.includes(d.sku))?.unitPrice || 0;
-            const avgCost = data.find(d => activeSKUs.includes(d.sku))?.unitCost || 0;
+            const adjustedOrders = avgOrdersPerDay * (1 + demandChange / 100);
+            const adjustedPrice = avgPrice * (1 + priceChange / 100);
+            const adjustedCost = avgCost * (1 + costChange / 100);
 
-            const newForecast = [];
-            const newCashFlow = [];
-            const lastDate = historicalAggregated.length > 0 ? new Date(historicalAggregated[historicalAggregated.length - 1].date) : new Date();
+            const forecastedUnits = Math.round(adjustedOrders * avgUnitsPerOrder * (1 + (Math.random() - 0.5) * 0.2));
+            const forecastedRevenue = forecastedUnits * adjustedPrice;
+            const forecastedCost = forecastedUnits * adjustedCost;
 
-            for (let i = 1; i <= 120; i++) {
-                const forecastDate = new Date(lastDate);
-                forecastDate.setDate(lastDate.getDate() + i);
-                
-                const adjustedOrders = avgOrdersPerDay * (1 + demandChange / 100);
-                const adjustedPrice = avgPrice * (1 + priceChange / 100);
-                const adjustedCost = avgCost * (1 + costChange / 100);
-
-                const forecastedUnits = Math.round(adjustedOrders * avgUnitsPerOrder * (1 + (Math.random() - 0.5) * 0.2));
-                const forecastedRevenue = forecastedUnits * adjustedPrice;
-                const forecastedCost = forecastedUnits * adjustedCost;
-
-                newForecast.push({
-                    date: forecastDate.toISOString().split('T')[0],
-                    forecastUnits: forecastedUnits,
-                    forecastRevenue: forecastedRevenue,
-                });
-
-                if (i % 30 === 1 || i === 120) {
-                    const monthStartDate = new Date(forecastDate);
-                    monthStartDate.setDate(1);
-                    const monthName = monthStartDate.toLocaleString('default', { month: 'short' });
-                    
-                    const monthlyRevenue = forecastedRevenue * 30;
-                    const monthlyCost = forecastedCost * 30;
-                    
-                    newCashFlow.push({
-                        month: `${monthName} '${String(monthStartDate.getFullYear()).slice(2)}`,
-                        revenue: monthlyRevenue,
-                        cogs: monthlyCost,
-                        profit: monthlyRevenue - monthlyCost,
-                    });
-                }
-            }
-            setForecastData(newForecast);
-            setCashFlowData(newCashFlow);
-            
-            // Generate Purchase Recommendations
-            const recommendations = [];
-            const forecastDemand120d = newForecast.reduce((sum, d) => sum + d.forecastUnits, 0);
-            
-            activeSKUs.forEach(sku => {
-                const latestEntry = data.filter(d => d.sku === sku).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-                if (latestEntry && latestEntry.currentInventory < latestEntry.reorderPoint) {
-                    const purchaseQty = Math.round((latestEntry.safetyStock - latestEntry.currentInventory) + forecastDemand120d / activeSKUs.length);
-                    recommendations.push({
-                        sku,
-                        currentInventory: latestEntry.currentInventory,
-                        reorderPoint: latestEntry.reorderPoint,
-                        purchaseQty: Math.max(0, purchaseQty), // Ensure non-negative
-                    });
-                }
+            newForecast.push({
+                date: forecastDate.toISOString().split('T')[0],
+                forecastUnits: forecastedUnits,
+                forecastRevenue: forecastedRevenue,
             });
-            setPurchaseRecommendations(recommendations);
-            
-            setIsLoading(false);
-        }, 500);
 
+            if (i % 30 === 1 || i === 120) {
+                const monthStartDate = new Date(forecastDate);
+                monthStartDate.setDate(1);
+                const monthName = monthStartDate.toLocaleString('default', { month: 'short' });
+                
+                const monthlyRevenue = forecastedRevenue * 30;
+                const monthlyCost = forecastedCost * 30;
+                
+                newCashFlow.push({
+                    month: `${monthName} '${String(monthStartDate.getFullYear()).slice(2)}`,
+                    revenue: monthlyRevenue,
+                    cogs: monthlyCost,
+                    profit: monthlyRevenue - monthlyCost,
+                });
+            }
+        }
+        setForecastData(newForecast);
+        setCashFlowData(newCashFlow);
+        
+        // Generate Purchase Recommendations
+        const recommendations = [];
+        const forecastDemand120d = newForecast.reduce((sum, d) => sum + d.forecastUnits, 0);
+        
+        activeSKUs.forEach(sku => {
+            const latestEntry = data.filter(d => d.sku === sku).sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+            if (latestEntry && latestEntry.currentInventory < latestEntry.reorderPoint) {
+                const purchaseQty = Math.round((latestEntry.safetyStock - latestEntry.currentInventory) + forecastDemand120d / activeSKUs.length);
+                recommendations.push({
+                    sku,
+                    currentInventory: latestEntry.currentInventory,
+                    reorderPoint: latestEntry.reorderPoint,
+                    purchaseQty: Math.max(0, purchaseQty), // Ensure non-negative
+                });
+            }
+        });
+        setPurchaseRecommendations(recommendations);
+        
     }, [data, activeSKUs, demandChange, priceChange, costChange]);
 
     useEffect(processData, [processData]);
-
-    const handleFileUpload = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            setError(null);
-            setFileName(file.name);
-            setIsLoading(true);
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const text = e.target.result;
-                    const lines = text.split('\n').slice(1);
-                    const parsedData = lines.map(line => {
-                        const [date, parentItem, sku, unitsSold, orderCount, unitPrice, unitCost, vendor, currentInventory, leadTime, reorderPoint, safetyStock] = line.split(',');
-                        if(!date || !sku) return null;
-                        return {
-                            date, parentItem, sku, 
-                            unitsSold: parseInt(unitsSold),
-                            orderCount: parseInt(orderCount),
-                            unitPrice: parseFloat(unitPrice),
-                            unitCost: parseFloat(unitCost),
-                            vendor,
-                            currentInventory: parseInt(currentInventory),
-                            leadTime: parseInt(leadTime),
-                            reorderPoint: parseInt(reorderPoint),
-                            safetyStock: parseInt(safetyStock),
-                        };
-                    }).filter(Boolean);
-                    if (parsedData.length === 0) {
-                        throw new Error("CSV file is empty or in the wrong format. Check the new template.");
-                    }
-                    setData(parsedData);
-                } catch (err) {
-                    setError("Failed to parse CSV. Please ensure it matches the new template including orderCount, reorderPoint, and safetyStock.");
-                    console.error(err);
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-            reader.readAsText(file);
-        }
-    };
 
     const toggleSKU = (sku) => {
         setActiveSKUs(prev => 
@@ -465,6 +479,41 @@ export default function App() {
         return [...historicalValues, ...forecastValues];
     }, [filteredData, forecastData]);
 
+    if (!isAuthorized) {
+        return (
+            <div className="bg-gray-900 text-white min-h-screen flex items-center justify-center font-sans">
+                <div className="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-md">
+                    <div className="flex items-center justify-center mb-6">
+                        <TrendingUp className="h-10 w-10 text-indigo-400" />
+                        <h1 className="text-3xl font-bold ml-3">ForecastAI</h1>
+                    </div>
+                    <p className="text-center text-gray-400 mb-8">Connect to your Google Sheet to begin.</p>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-sm font-medium text-gray-300">Google API Key</label>
+                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-300">Google Client ID</label>
+                            <input type="password" value={clientId} onChange={e => setClientId(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-300">Google Sheet URL</label>
+                            <input type="text" value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                    </div>
+                    
+                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                        <LogIn className="mr-2 h-5 w-5"/>
+                        Connect & Authorize
+                    </button>
+                    {error && <p className="text-red-400 text-sm mt-4 text-center">{error}</p>}
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="bg-gray-900 text-white min-h-screen font-sans flex">
             <aside className="w-64 bg-gray-800 p-4 flex flex-col">
@@ -474,17 +523,15 @@ export default function App() {
                 </div>
                 
                 <div className="mb-6">
-                    <label htmlFor="file-upload" className="w-full cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg inline-flex items-center justify-center transition-colors">
-                        <Upload className="mr-2 h-5 w-5" />
-                        <span>Upload CSV</span>
-                    </label>
-                    <input id="file-upload" type="file" className="hidden" accept=".csv" onChange={handleFileUpload} />
-                    {fileName && <p className="text-xs text-gray-400 mt-2 truncate"><FileText className="inline mr-1 h-3 w-3"/>{fileName}</p>}
+                    <div className="p-2 rounded-lg bg-green-900/50 text-center">
+                        <p className="text-sm font-semibold text-green-300">Connected</p>
+                        <p className="text-xs text-gray-400 truncate">{sheetUrl.substring(0,30)}...</p>
+                    </div>
                 </div>
 
                 <nav className="flex-grow overflow-y-auto">
                     <h2 className="text-sm font-semibold text-gray-400 mb-2">PRODUCTS (SKUs)</h2>
-                    {Object.keys(skuList).map(category => (
+                    {isLoading ? <p className="text-gray-400 text-sm">Loading SKUs...</p> : Object.keys(skuList).map(category => (
                         <div key={category}>
                             <div onClick={() => toggleCategory(category)} className="flex items-center justify-between cursor-pointer p-2 rounded-md hover:bg-gray-700">
                                 <span className="font-semibold">{category}</span>
