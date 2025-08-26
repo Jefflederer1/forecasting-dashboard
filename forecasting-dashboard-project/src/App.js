@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, LogIn } from 'lucide-react';
 
@@ -117,9 +117,13 @@ export default function App() {
 
     // Google Sheets State
     const [apiKey, setApiKey] = useState('');
+    const [clientId, setClientId] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isAuthorized, setIsAuthorized] = useState(false);
     const [gapiLoaded, setGapiLoaded] = useState(false);
+    const [gisLoaded, setGisLoaded] = useState(false);
+    const tokenClientRef = useRef(null);
+
 
     // What-if scenario state
     const [demandChange, setDemandChange] = useState(0);
@@ -135,7 +139,7 @@ export default function App() {
     
     const [purchaseRecommendations, setPurchaseRecommendations] = useState([]);
     
-    // Load Google API script
+    // Load Google API scripts
     useEffect(() => {
         const scriptGapi = document.createElement('script');
         scriptGapi.src = 'https://apis.google.com/js/api.js';
@@ -144,22 +148,25 @@ export default function App() {
         scriptGapi.onload = () => window.gapi.load('client', () => setGapiLoaded(true));
         document.body.appendChild(scriptGapi);
 
+        const scriptGis = document.createElement('script');
+        scriptGis.src = 'https://accounts.google.com/gsi/client';
+        scriptGis.async = true;
+        scriptGis.defer = true;
+        scriptGis.onload = () => setGisLoaded(true);
+        document.body.appendChild(scriptGis);
+
         return () => {
             document.body.removeChild(scriptGapi);
+            document.body.removeChild(scriptGis);
         }
     }, []);
 
-    const handleConnect = useCallback(async () => {
-        if (!sheetUrl || !apiKey) {
-            setError("Please provide both the Google Sheet URL and your API Key.");
+    const listSheetData = useCallback(async () => {
+        if (!sheetUrl) {
+            setError("Please enter a valid Google Sheet URL.");
             return;
         }
-
-        if (!gapiLoaded) {
-            setError("Google API client is not loaded yet. Please wait a moment and try again.");
-            return;
-        }
-
+        
         try {
             await window.gapi.client.init({
                 apiKey: apiKey,
@@ -176,7 +183,7 @@ export default function App() {
             setIsLoading(true);
             const response = await window.gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: spreadsheetId,
-                range: 'Sheet1!A2:L',
+                range: 'Sheet1!A2:L', // Assuming data starts from the second row
             });
 
             const range = response.result;
@@ -194,18 +201,41 @@ export default function App() {
                     safetyStock: parseInt(row[11]) || 0,
                 }));
                 setData(parsedData);
-                setIsAuthenticated(true);
                 setError(null);
             } else {
-                setError("No data found. Ensure Sheet1 has data and is shared with your Service Account's email.");
+                setError("No data found in the spreadsheet.");
             }
         } catch (err) {
-            setError("Failed to connect. Check API Key, Sheet URL, and sharing permissions.");
-            console.error('Execute error', err);
+            setError("Error fetching data from Google Sheet. Check permissions and URL.");
+            console.error('execute error', err);
         } finally {
             setIsLoading(false);
         }
-    }, [apiKey, sheetUrl, gapiLoaded]);
+    }, [apiKey, sheetUrl]);
+
+
+    const handleAuthClick = useCallback(() => {
+        if (gapiLoaded && gisLoaded && clientId) {
+            tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+                callback: async (resp) => {
+                    if (resp.error !== undefined) {
+                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`);
+                        return;
+                    }
+                    setIsAuthorized(true);
+                    await listSheetData();
+                },
+            });
+
+            if (window.gapi.client.getToken() === null) {
+                tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
+            } else {
+                tokenClientRef.current.requestAccessToken({ prompt: '' });
+            }
+        }
+    }, [gapiLoaded, gisLoaded, clientId, listSheetData]);
 
 
     // Memoize SKU list to prevent re-computation
@@ -451,29 +481,34 @@ export default function App() {
         return [...historicalValues, ...forecastValues];
     }, [filteredData, forecastData]);
 
-    if (!isAuthenticated) {
+    if (!isAuthorized) {
         return (
             <div className="bg-gray-900 text-white min-h-screen flex items-center justify-center font-sans">
-                <div className="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-lg">
+                <div className="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-md">
                     <div className="flex items-center justify-center mb-6">
                         <TrendingUp className="h-10 w-10 text-indigo-400" />
                         <h1 className="text-3xl font-bold ml-3">ForecastAI</h1>
                     </div>
-                    <p className="text-center text-gray-400 mb-8">Connect to your Google Sheet using an API Key.</p>
+                    <p className="text-center text-gray-400 mb-8">Connect to your Google Sheet to begin.</p>
                     
                     <div className="space-y-4">
+                        <div>
+                            <label className="text-sm font-medium text-gray-300">Google API Key</label>
+                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-gray-300">Google Client ID</label>
+                            <input type="password" value={clientId} onChange={e => setClientId(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                        </div>
                         <div>
                             <label className="text-sm font-medium text-gray-300">Google Sheet URL</label>
                             <input type="text" value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
-                        <div>
-                            <label className="text-sm font-medium text-gray-300">Your Google API Key</label>
-                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter the API Key you created" className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
-                        </div>
                     </div>
                     
-                    <button onClick={handleConnect} disabled={isLoading || !gapiLoaded} className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
-                        {isLoading ? <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div> : <><LogIn className="mr-2 h-5 w-5"/> Connect to Sheet</>}
+                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                        <LogIn className="mr-2 h-5 w-5"/>
+                        Connect & Authorize
                     </button>
                     {error && <p className="text-red-400 text-sm mt-4 text-center">{error}</p>}
                 </div>
