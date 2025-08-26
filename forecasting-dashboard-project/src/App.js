@@ -432,25 +432,26 @@ export default function App() {
         `;
     
         try {
-            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-            const payload = { contents: chatHistory };
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-            
-            const response = await fetch(apiUrl, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                }),
             });
     
-            if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`API call failed with status: ${response.status}`);
+            }
     
             const result = await response.json();
             
             if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
                 setAiInsights(result.candidates[0].content.parts[0].text);
             } else {
-                throw new Error("Invalid response structure from API.");
+                setAiInsights("Could not retrieve insights from the AI model.");
             }
     
         } catch (err) {
