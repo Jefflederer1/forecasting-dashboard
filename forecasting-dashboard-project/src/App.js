@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, LogIn } from 'lucide-react';
+import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, LogIn, LogOut } from 'lucide-react';
 
 // --- Helper Components ---
 
@@ -122,6 +122,7 @@ export default function App() {
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [gapiLoaded, setGapiLoaded] = useState(false);
     const [gisLoaded, setGisLoaded] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
     const tokenClientRef = useRef(null);
 
 
@@ -138,6 +139,18 @@ export default function App() {
     const [isGeneratingInsights, setIsGeneratingInsights] = useState(false);
     
     const [purchaseRecommendations, setPurchaseRecommendations] = useState([]);
+    
+    // Load saved credentials from localStorage on initial load
+    useEffect(() => {
+        const savedCreds = localStorage.getItem('forecastAiCreds');
+        if (savedCreds) {
+            const { apiKey, clientId, sheetUrl } = JSON.parse(savedCreds);
+            setApiKey(apiKey);
+            setClientId(clientId);
+            setSheetUrl(sheetUrl);
+            setRememberMe(true);
+        }
+    }, []);
     
     // Load Google API scripts
     useEffect(() => {
@@ -215,6 +228,12 @@ export default function App() {
 
 
     const handleAuthClick = useCallback(() => {
+        if (rememberMe) {
+            localStorage.setItem('forecastAiCreds', JSON.stringify({ apiKey, clientId, sheetUrl }));
+        } else {
+            localStorage.removeItem('forecastAiCreds');
+        }
+
         if (gapiLoaded && gisLoaded && clientId) {
             tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
                 client_id: clientId,
@@ -235,7 +254,16 @@ export default function App() {
                 tokenClientRef.current.requestAccessToken({ prompt: '' });
             }
         }
-    }, [gapiLoaded, gisLoaded, clientId, listSheetData]);
+    }, [gapiLoaded, gisLoaded, clientId, listSheetData, rememberMe, apiKey, sheetUrl]);
+
+    const handleLogout = () => {
+        localStorage.removeItem('forecastAiCreds');
+        setIsAuthorized(false);
+        setData([]);
+        setApiKey('');
+        setClientId('');
+        setSheetUrl('');
+    };
 
 
     // Memoize SKU list to prevent re-computation
@@ -507,7 +535,12 @@ export default function App() {
                         </div>
                     </div>
                     
-                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <div className="flex items-center mt-4">
+                        <input type="checkbox" id="rememberMe" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="h-4 w-4 bg-gray-700 border-gray-600 text-indigo-500 rounded focus:ring-indigo-500" />
+                        <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
+                    </div>
+
+                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
@@ -553,6 +586,10 @@ export default function App() {
                         </div>
                     ))}
                 </nav>
+                <button onClick={handleLogout} className="w-full mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center transition-colors">
+                    <LogOut className="mr-2 h-4 w-4"/>
+                    Log Out
+                </button>
             </aside>
 
             <main className="flex-1 p-6 overflow-y-auto">
