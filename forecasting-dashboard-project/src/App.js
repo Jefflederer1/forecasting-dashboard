@@ -73,7 +73,6 @@ export default function App() {
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [gapiLoaded, setGapiLoaded] = useState(false);
-    const [gapiInitialized, setGapiInitialized] = useState(false);
     const [gisLoaded, setGisLoaded] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const tokenClientRef = useRef(null);
@@ -83,7 +82,7 @@ export default function App() {
 
     // New feature states
     const [serviceLevel, setServiceLevel] = useState(98);
-    const [leadTimeChange, setLeadTimeChange] = useState(0); // This is a % change
+    const [leadTimeChange, setLeadTimeChange] = useState(0);
     const [vendorFilter, setVendorFilter] = useState('All');
     const [abcClassification, setAbcClassification] = useState({});
     
@@ -103,53 +102,50 @@ export default function App() {
     useEffect(() => {
         const scriptGapi = document.createElement('script');
         scriptGapi.src = 'https://apis.google.com/js/api.js';
-        scriptGapi.async = true; scriptGapi.defer = true;
+        scriptGapi.async = true;
+        scriptGapi.defer = true;
         scriptGapi.onload = () => window.gapi.load('client', () => setGapiLoaded(true));
         document.body.appendChild(scriptGapi);
 
         const scriptGis = document.createElement('script');
         scriptGis.src = 'https://accounts.google.com/gsi/client';
-        scriptGis.async = true; scriptGis.defer = true;
+        scriptGis.async = true;
+        scriptGis.defer = true;
         scriptGis.onload = () => setGisLoaded(true);
         document.body.appendChild(scriptGis);
 
-        return () => { document.body.removeChild(scriptGapi); document.body.removeChild(scriptGis); }
+        return () => {
+            document.body.removeChild(scriptGapi);
+            document.body.removeChild(scriptGis);
+        }
     }, []);
 
-    // Initialize GAPI client once API key is ready
-    useEffect(() => {
-        if (gapiLoaded && apiKey) {
-            const initGapiClient = async () => {
-                try {
-                    await window.gapi.client.init({
-                        apiKey: apiKey,
-                        discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
-                    });
-                    setGapiInitialized(true);
-                } catch (error) {
-                    setError("Failed to initialize Google API client. Check API Key.");
-                    console.error("GAPI Init Error:", error);
-                }
-            };
-            initGapiClient();
-        }
-    }, [gapiLoaded, apiKey]);
-
-
-    const handleAuthClick = useCallback(() => {
+    const handleAuthClick = useCallback(async () => {
+        setError(null);
         if (rememberMe) {
             localStorage.setItem('forecastAiCredsV2', JSON.stringify({ apiKey, clientId, sheetUrl }));
         } else {
             localStorage.removeItem('forecastAiCredsV2');
         }
 
-        if (gapiInitialized && gisLoaded && clientId) {
+        try {
+            await window.gapi.client.init({
+                apiKey: apiKey,
+                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
+            });
+        } catch (error) {
+            setError("Failed to initialize Google API. Check API Key.");
+            console.error("GAPI Init Error:", error);
+            return;
+        }
+
+        if (gisLoaded && clientId) {
             tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
                 client_id: clientId,
                 scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
-                callback: async (resp) => {
+                callback: (resp) => {
                     if (resp.error) {
-                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`); 
+                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`);
                         return;
                     }
                     setIsAuthorized(true);
@@ -162,7 +158,7 @@ export default function App() {
                 tokenClientRef.current.requestAccessToken({ prompt: '' });
             }
         }
-    }, [gapiInitialized, gisLoaded, clientId, rememberMe, apiKey, sheetUrl]);
+    }, [rememberMe, apiKey, clientId, sheetUrl, gisLoaded]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -176,7 +172,7 @@ export default function App() {
     // Fetch and process data after authorization
     useEffect(() => {
         const fetchData = async () => {
-            if (!isAuthorized || !sheetUrl || !gapiInitialized) return;
+            if (!isAuthorized || !sheetUrl) return;
             try {
                 const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) { setError("Invalid Google Sheet URL format."); return; }
@@ -202,7 +198,7 @@ export default function App() {
             }
         };
         fetchData();
-    }, [isAuthorized, sheetUrl, gapiInitialized]);
+    }, [isAuthorized, sheetUrl]);
     
     // Perform ABC Analysis
     useEffect(() => {
@@ -312,7 +308,7 @@ export default function App() {
     const filteredPurchaseRecommendations = useMemo(() => {
         if (!processedData) return [];
         return Object.entries(processedData)
-            .filter(([sku, metrics]) => 
+            .filter(([, metrics]) => 
                 metrics.purchaseRecommendation > 0 && (vendorFilter === 'All' || metrics.vendor === vendorFilter)
             )
             .map(([sku, metrics]) => ({ sku, ...metrics }));
@@ -372,7 +368,7 @@ export default function App() {
                         <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
                     </div>
 
-                    <button onClick={handleAuthClick} disabled={!gapiInitialized || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
@@ -506,4 +502,5 @@ export default function App() {
         </div>
     );
 }
+
 
