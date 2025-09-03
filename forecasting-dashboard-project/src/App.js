@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Sliders, DollarSign, Package, BarChart2, TrendingUp, ChevronDown, ChevronRight, AlertCircle, Sparkles, ShoppingCart, AlertTriangle, LogIn, LogOut, Filter, Truck, Activity, Repeat } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Sliders, DollarSign, Package, TrendingUp, ChevronDown, ChevronRight, LogIn, LogOut, Filter, Activity, Repeat, ShoppingCart } from 'lucide-react';
 
 // --- Helper & Utility Functions ---
 
@@ -67,7 +67,6 @@ const ScenarioControl = ({ label, value, onChange, min, max, step, unit='' }) =>
 
 export default function App() {
     const [data, setData] = useState([]);
-    const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [apiKey, setApiKey] = useState('');
     const [clientId, setClientId] = useState('');
@@ -89,8 +88,6 @@ export default function App() {
     
     // What-if scenario states
     const [demandChange, setDemandChange] = useState(0);
-
-    // AI state (removed for now)
     
     // Load saved credentials
     useEffect(() => {
@@ -149,7 +146,6 @@ export default function App() {
         localStorage.removeItem('forecastAiCredsV2');
         setIsAuthorized(false);
         setData([]);
-        // Reset credentials to empty strings to truly log out
         setApiKey('');
         setClientId('');
         setSheetUrl('');
@@ -164,7 +160,6 @@ export default function App() {
                 const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) { setError("Invalid Google Sheet URL format."); return; }
                 const spreadsheetId = spreadsheetIdMatch[1];
-                setIsLoading(true);
                 const response = await window.gapi.client.sheets.spreadsheets.values.get({ spreadsheetId, range: 'Sheet1!A2:J' });
                 const range = response.result;
                 if (range.values && range.values.length > 0) {
@@ -183,8 +178,6 @@ export default function App() {
                 } else { setError("No data found in the spreadsheet. Make sure the tab is named 'Sheet1'."); }
             } catch (err) {
                 setError("Error fetching data. Check permissions, URL, and ensure the tab is named 'Sheet1'."); console.error(err);
-            } finally {
-                setIsLoading(false);
             }
         };
         fetchData();
@@ -313,7 +306,6 @@ export default function App() {
                 combined[day.date].inventory += day.inventory;
             });
         });
-        // Sort by date to ensure the chart is correct
         return Object.values(combined).sort((a, b) => {
             if (a.date === 'Today') return -1;
             if (b.date === 'Today') return 1;
