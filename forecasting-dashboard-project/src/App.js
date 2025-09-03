@@ -354,16 +354,16 @@ export default function App() {
                     
                     <div className="space-y-4">
                         <div>
-                            <label className="text-sm font-medium text-gray-300">Google API Key</label>
-                            <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                            <label htmlFor="apiKey" className="text-sm font-medium text-gray-300">Google API Key</label>
+                            <input type="password" id="apiKey" name="apiKey" value={apiKey} onChange={e => setApiKey(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-300">Google Client ID</label>
-                            <input type="password" value={clientId} onChange={e => setClientId(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                            <label htmlFor="clientId" className="text-sm font-medium text-gray-300">Google Client ID</label>
+                            <input type="password" id="clientId" name="clientId" value={clientId} onChange={e => setClientId(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                         <div>
-                            <label className="text-sm font-medium text-gray-300">Google Sheet URL</label>
-                            <input type="text" value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+                            <label htmlFor="sheetUrl" className="text-sm font-medium text-gray-300">Google Sheet URL</label>
+                            <input type="text" id="sheetUrl" name="sheetUrl" value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
                         </div>
                     </div>
                     
@@ -398,7 +398,7 @@ export default function App() {
                     <label htmlFor="vendorFilter" className="text-sm font-semibold text-gray-400 mb-2 flex items-center">
                         <Filter className="mr-2 h-4 w-4" /> VENDOR FILTER
                     </label>
-                    <select id="vendorFilter" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}
+                    <select id="vendorFilter" name="vendorFilter" value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}
                         className="w-full p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500">
                         {vendorList.map(v => <option key={v} value={v}>{v}</option>)}
                     </select>
