@@ -73,6 +73,7 @@ export default function App() {
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [gapiLoaded, setGapiLoaded] = useState(false);
+    const [gapiInitialized, setGapiInitialized] = useState(false);
     const [gisLoaded, setGisLoaded] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const tokenClientRef = useRef(null);
@@ -115,6 +116,26 @@ export default function App() {
         return () => { document.body.removeChild(scriptGapi); document.body.removeChild(scriptGis); }
     }, []);
 
+    // Initialize GAPI client once API key is ready
+    useEffect(() => {
+        if (gapiLoaded && apiKey) {
+            const initGapiClient = async () => {
+                try {
+                    await window.gapi.client.init({
+                        apiKey: apiKey,
+                        discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
+                    });
+                    setGapiInitialized(true);
+                } catch (error) {
+                    setError("Failed to initialize Google API client. Check API Key.");
+                    console.error("GAPI Init Error:", error);
+                }
+            };
+            initGapiClient();
+        }
+    }, [gapiLoaded, apiKey]);
+
+
     const handleAuthClick = useCallback(() => {
         if (rememberMe) {
             localStorage.setItem('forecastAiCredsV2', JSON.stringify({ apiKey, clientId, sheetUrl }));
@@ -122,13 +143,14 @@ export default function App() {
             localStorage.removeItem('forecastAiCredsV2');
         }
 
-        if (gapiLoaded && gisLoaded && clientId) {
+        if (gapiInitialized && gisLoaded && clientId) {
             tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
                 client_id: clientId,
                 scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
                 callback: async (resp) => {
                     if (resp.error) {
-                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`); return;
+                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`); 
+                        return;
                     }
                     setIsAuthorized(true);
                 },
@@ -140,7 +162,7 @@ export default function App() {
                 tokenClientRef.current.requestAccessToken({ prompt: '' });
             }
         }
-    }, [gapiLoaded, gisLoaded, clientId, rememberMe, apiKey, sheetUrl]);
+    }, [gapiInitialized, gisLoaded, clientId, rememberMe, apiKey, sheetUrl]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -154,9 +176,8 @@ export default function App() {
     // Fetch and process data after authorization
     useEffect(() => {
         const fetchData = async () => {
-            if (!isAuthorized || !sheetUrl || !apiKey) return;
+            if (!isAuthorized || !sheetUrl || !gapiInitialized) return;
             try {
-                await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
                 const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) { setError("Invalid Google Sheet URL format."); return; }
                 const spreadsheetId = spreadsheetIdMatch[1];
@@ -181,7 +202,7 @@ export default function App() {
             }
         };
         fetchData();
-    }, [isAuthorized, sheetUrl, apiKey]);
+    }, [isAuthorized, sheetUrl, gapiInitialized]);
     
     // Perform ABC Analysis
     useEffect(() => {
@@ -351,7 +372,7 @@ export default function App() {
                         <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
                     </div>
 
-                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleAuthClick} disabled={!gapiInitialized || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
