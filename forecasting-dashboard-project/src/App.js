@@ -60,8 +60,6 @@ export default function App() {
     const [clientId, setClientId] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
-    const [gapiReady, setGapiReady] = useState(false);
-    const [gisReady, setGisReady] = useState(false);
     const [authClientReady, setAuthClientReady] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [activeSKUs, setActiveSKUs] = useState([]);
@@ -82,38 +80,41 @@ export default function App() {
         }
     }, []);
 
-    // Load Google API scripts
+    // NEW ROBUST, SEQUENTIAL SCRIPT LOADING
     useEffect(() => {
         const scriptGapi = document.createElement('script');
         scriptGapi.src = 'https://apis.google.com/js/api.js';
         scriptGapi.async = true;
         scriptGapi.defer = true;
-        scriptGapi.onload = () => window.gapi.load('client', () => setGapiReady(true));
-        document.body.appendChild(scriptGapi);
-
-        const scriptGis = document.createElement('script');
-        scriptGis.src = 'https://accounts.google.com/gsi/client';
-        scriptGis.async = true;
-        scriptGis.defer = true;
-        scriptGis.onload = () => setGisReady(true);
-        document.body.appendChild(scriptGis);
-
-        return () => {
-            document.body.removeChild(scriptGapi);
-            document.body.removeChild(scriptGis);
+        
+        scriptGapi.onload = () => {
+            window.gapi.load('client', () => {
+                // GAPI client is loaded, NOW load GIS
+                const scriptGis = document.createElement('script');
+                scriptGis.src = 'https://accounts.google.com/gsi/client';
+                scriptGis.async = true;
+                scriptGis.defer = true;
+                scriptGis.onload = () => {
+                    // Both scripts are now guaranteed to be loaded.
+                    // The auth client will be initialized in the next useEffect.
+                };
+                document.body.appendChild(scriptGis);
+            });
         };
+        document.body.appendChild(scriptGapi);
     }, []);
     
-    // Initialize auth client when scripts are ready AND credentials exist
+    // Initialize auth client only when scripts are ready AND credentials are provided
     useEffect(() => {
-        if (gapiReady && gisReady && clientId && apiKey) {
+        // Check if both libraries are loaded and credentials are set
+        if (window.gapi && window.google && clientId && apiKey) {
             try {
                 tokenClient.current = window.google.accounts.oauth2.initTokenClient({
                     client_id: clientId,
                     scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
                     callback: async (tokenResponse) => {
                         if (tokenResponse.error) {
-                            setError(`Authorization Error: ${tokenResponse.error_description || 'Check console'}`);
+                            setError(`Authorization Error: ${tokenResponse.error_description || 'Check console.'}`);
                             setIsAuthorized(false);
                             return;
                         }
@@ -121,22 +122,22 @@ export default function App() {
                             await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
                             setIsAuthorized(true);
                         } catch (initErr) {
-                            setError("API Init Error: Check API Key.");
+                            setError("API Initialization Error: Check your API Key.");
                         }
                     },
                 });
-                setAuthClientReady(true);
+                setAuthClientReady(true); // SUCCESS: Auth client is ready
             } catch (err) {
-                 setError("Auth Client Error: Check Client ID.");
+                 setError("Authentication Client Error: Check your Client ID.");
                  setAuthClientReady(false);
             }
         } else {
-            setAuthClientReady(false);
+            setAuthClientReady(false); // Not ready yet
         }
-    }, [gapiReady, gisReady, clientId, apiKey]);
+    }, [clientId, apiKey]); // Re-run this check if creds change
 
 
-    const handleAuthClick = useCallback(() => {
+    const handleAuthClick = () => {
         setError(null);
         if (rememberMe) {
             localStorage.setItem('forecastAiCredsV2', JSON.stringify({ apiKey, clientId, sheetUrl }));
@@ -147,9 +148,10 @@ export default function App() {
         if (tokenClient.current) {
             tokenClient.current.requestAccessToken({ prompt: 'consent' });
         } else {
-            setError("Authentication client not ready. Please wait or check credentials.");
+            // This case should be rare now due to the disabled button logic
+            setError("Authentication client not ready. Please ensure all credentials are correct.");
         }
-    }, [rememberMe, apiKey, clientId, sheetUrl]);
+    };
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -373,7 +375,7 @@ export default function App() {
                         <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
                     </div>
 
-                    <button onClick={handleAuthClick} disabled={!authClientReady} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleAuthClick} disabled={!authClientReady || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
@@ -481,7 +483,7 @@ export default function App() {
                                                 <p className="text-xs text-gray-400">Min (Reorder)</p>
                                                 <p className="font-semibold text-white">{metrics.reorderPoint.toLocaleString()}</p>
                                             </div>
-                                            <div className="bg-gray-700 p-2 rounded">
+                                            <div className="bg-gray-800 p-2 rounded">
                                                 <p className="text-xs text-gray-400">Max Stock</p>
                                                 <p className="font-semibold text-white">{metrics.maxStock.toLocaleString()}</p>
                                             </div>
