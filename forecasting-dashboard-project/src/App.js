@@ -3,14 +3,9 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Sliders, DollarSign, Package, TrendingUp, ChevronDown, ChevronRight, LogIn, LogOut, Filter, Activity, Repeat, ShoppingCart } from 'lucide-react';
 
 // --- Helper & Utility Functions ---
-
-// Z-scores for common service levels
-const SERVICE_LEVEL_Z = {
-    90: 1.28, 95: 1.645, 98: 2.05, 99: 2.33
-};
+const SERVICE_LEVEL_Z = { 90: 1.28, 95: 1.645, 98: 2.05, 99: 2.33 };
 
 // --- Helper Components ---
-
 const KPICard = ({ title, value, icon, unit = '', helpText }) => (
     <div className="bg-gray-800 p-4 rounded-lg shadow-lg flex flex-col justify-between relative group">
         <div className="flex items-center justify-between">
@@ -34,9 +29,7 @@ const CustomTooltip = ({ active, payload, label }) => {
             <div className="bg-gray-700 p-3 rounded-lg border border-gray-600 shadow-xl">
                 <p className="label text-white font-bold">{`${label}`}</p>
                 {payload.map((p, i) => (
-                    <p key={i} style={{ color: p.color }}>
-                        {`${p.name}: ${p.value.toLocaleString()}`}
-                    </p>
+                    <p key={i} style={{ color: p.color }}>{`${p.name}: ${p.value.toLocaleString()}`}</p>
                 ))}
             </div>
         );
@@ -44,16 +37,12 @@ const CustomTooltip = ({ active, payload, label }) => {
     return null;
 };
 
-const ScenarioControl = ({ label, value, onChange, min, max, step, unit='' }) => (
+const ScenarioControl = ({ label, value, onChange, min, max, step, unit = '' }) => (
     <div className="mb-4">
         <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
         <div className="flex items-center">
             <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={value}
+                type="range" min={min} max={max} step={step} value={value}
                 onChange={e => onChange(parseFloat(e.target.value))}
                 className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer"
             />
@@ -62,33 +51,27 @@ const ScenarioControl = ({ label, value, onChange, min, max, step, unit='' }) =>
     </div>
 );
 
-
 // --- Main App Component ---
-
 export default function App() {
+    // State declarations
     const [data, setData] = useState([]);
     const [error, setError] = useState(null);
     const [apiKey, setApiKey] = useState('');
     const [clientId, setClientId] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
-    const [gapiLoaded, setGapiLoaded] = useState(false);
-    const [gisLoaded, setGisLoaded] = useState(false);
+    const [gapiReady, setGapiReady] = useState(false);
+    const [gisReady, setGisReady] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
-    const tokenClientRef = useRef(null);
-
     const [activeSKUs, setActiveSKUs] = useState([]);
     const [expandedCategories, setExpandedCategories] = useState({});
-
-    // New feature states
     const [serviceLevel, setServiceLevel] = useState(98);
     const [leadTimeChange, setLeadTimeChange] = useState(0);
     const [vendorFilter, setVendorFilter] = useState('All');
     const [abcClassification, setAbcClassification] = useState({});
-    
-    // What-if scenario states
     const [demandChange, setDemandChange] = useState(0);
-    
+    const tokenClient = useRef(null);
+
     // Load saved credentials
     useEffect(() => {
         const savedCreds = localStorage.getItem('forecastAiCredsV2');
@@ -97,63 +80,75 @@ export default function App() {
             setApiKey(apiKey); setClientId(clientId); setSheetUrl(sheetUrl); setRememberMe(true);
         }
     }, []);
-    
+
     // Load Google API scripts
     useEffect(() => {
         const scriptGapi = document.createElement('script');
         scriptGapi.src = 'https://apis.google.com/js/api.js';
         scriptGapi.async = true;
         scriptGapi.defer = true;
-        scriptGapi.onload = () => window.gapi.load('client', () => setGapiLoaded(true));
+        scriptGapi.onload = () => window.gapi.load('client', () => setGapiReady(true));
         document.body.appendChild(scriptGapi);
 
         const scriptGis = document.createElement('script');
         scriptGis.src = 'https://accounts.google.com/gsi/client';
         scriptGis.async = true;
         scriptGis.defer = true;
-        scriptGis.onload = () => setGisLoaded(true);
+        scriptGis.onload = () => setGisReady(true);
         document.body.appendChild(scriptGis);
 
         return () => {
             document.body.removeChild(scriptGapi);
             document.body.removeChild(scriptGis);
-        }
+        };
     }, []);
+    
+    // Initialize GIS Client once ready
+    useEffect(() => {
+        if (gapiReady && gisReady && clientId) {
+            try {
+                tokenClient.current = window.google.accounts.oauth2.initTokenClient({
+                    client_id: clientId,
+                    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+                    callback: async (tokenResponse) => {
+                        if (tokenResponse.error) {
+                            setError(`Authorization error: ${tokenResponse.error_description}`);
+                            setIsAuthorized(false);
+                            return;
+                        }
+                        try {
+                            await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
+                            setIsAuthorized(true);
+                        } catch (initErr) {
+                            setError("Failed to initialize Google API client. Check API Key.");
+                        }
+                    },
+                });
+            } catch (err) {
+                 setError("Failed to initialize Google Auth. Check Client ID.");
+            }
+        }
+    }, [gapiReady, gisReady, clientId, apiKey]);
+
 
     const handleAuthClick = useCallback(() => {
+        setError(null);
         if (rememberMe) {
             localStorage.setItem('forecastAiCredsV2', JSON.stringify({ apiKey, clientId, sheetUrl }));
         } else {
             localStorage.removeItem('forecastAiCredsV2');
         }
 
-        if (gapiLoaded && gisLoaded && clientId) {
-            tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
-                client_id: clientId,
-                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
-                callback: async (resp) => {
-                    if (resp.error) {
-                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`); 
-                        setIsAuthorized(false);
-                        return;
-                    }
-                     try {
-                        await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
-                        setIsAuthorized(true);
-                    } catch (err) {
-                        setError("Failed to initialize Google API. Check API Key.");
-                        console.error(err);
-                    }
-                },
-            });
-
-            if (!window.gapi.client.getToken()) {
-                tokenClientRef.current.requestAccessToken({ prompt: 'consent' });
+        if (tokenClient.current) {
+            if (window.gapi.client.getToken() === null) {
+                tokenClient.current.requestAccessToken({ prompt: 'consent' });
             } else {
-                tokenClientRef.current.requestAccessToken({ prompt: '' });
+                tokenClient.current.requestAccessToken({ prompt: '' });
             }
+        } else {
+            setError("Authentication client is not ready. Please wait a moment.");
         }
-    }, [gapiLoaded, gisLoaded, clientId, rememberMe, apiKey, sheetUrl]);
+    }, [rememberMe, apiKey, clientId, sheetUrl]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -167,15 +162,15 @@ export default function App() {
     // Fetch and process data after authorization
     useEffect(() => {
         const fetchData = async () => {
-            if (!isAuthorized || !sheetUrl || !apiKey) return;
+            if (!isAuthorized || !sheetUrl) return;
             try {
                 const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) { setError("Invalid Google Sheet URL format."); return; }
                 const spreadsheetId = spreadsheetIdMatch[1];
                 const response = await window.gapi.client.sheets.spreadsheets.values.get({ spreadsheetId, range: 'Sheet1!A2:J' });
-                const range = response.result;
-                if (range.values && range.values.length > 0) {
-                    const parsedData = range.values.map(row => ({
+                const { result } = response;
+                if (result.values && result.values.length > 0) {
+                    const parsedData = result.values.map(row => ({
                         date: row[0], parentItem: row[1], sku: row[2],
                         unitsSold: parseInt(row[3]) || 0,
                         orderCount: parseInt(row[4]) || 0,
@@ -189,11 +184,12 @@ export default function App() {
                     setError(null);
                 } else { setError("No data found in the spreadsheet. Make sure the tab is named 'Sheet1'."); }
             } catch (err) {
-                setError("Error fetching data. Check permissions, URL, and ensure the tab is named 'Sheet1'."); console.error(err);
+                setError("Error fetching data. Check permissions, URL, and ensure the tab is named 'Sheet1'.");
+                console.error(err);
             }
         };
         fetchData();
-    }, [isAuthorized, sheetUrl, apiKey]);
+    }, [isAuthorized, sheetUrl]);
     
     // Perform ABC Analysis
     useEffect(() => {
@@ -226,34 +222,26 @@ export default function App() {
     // Core calculation engine
     const processedData = useMemo(() => {
         if (data.length === 0 || activeSKUs.length === 0) return null;
-
         const results = {};
-
         activeSKUs.forEach(sku => {
             const skuData = data.filter(d => d.sku === sku).sort((a,b) => new Date(a.date) - new Date(b.date));
             if (skuData.length < 2) return;
-
             const dailySales = skuData.map(d => d.unitsSold);
             const avgDailySales = dailySales.reduce((sum, val) => sum + val, 0) / dailySales.length;
             const variance = dailySales.reduce((sum, val) => sum + Math.pow(val - avgDailySales, 2), 0) / (dailySales.length - 1);
-            const stdDevDailySales = Math.sqrt(variance);
-
+            const stdDevDailySales = Math.sqrt(variance) || 0;
             const baseLeadTime = skuData[0].leadTime;
             const adjustedLeadTime = Math.round(baseLeadTime * (1 + leadTimeChange / 100));
             const Z = SERVICE_LEVEL_Z[serviceLevel] || 2.05;
-
             const safetyStock = Math.round(Z * stdDevDailySales * Math.sqrt(adjustedLeadTime));
             const reorderPoint = Math.round((avgDailySales * adjustedLeadTime) + safetyStock);
-            
             const reviewPeriod = 30;
             const maxStock = Math.round(reorderPoint + (avgDailySales * reviewPeriod));
-            
             const currentInventory = skuData[skuData.length - 1].currentInventory;
             let purchaseRecommendation = 0;
             if (currentInventory <= reorderPoint) {
                 purchaseRecommendation = maxStock - currentInventory;
             }
-
             const forecast = [];
             let projectedInventory = currentInventory;
             const inventoryProjectionData = [{ date: 'Today', inventory: currentInventory }];
@@ -262,18 +250,16 @@ export default function App() {
                 forecastDate.setDate(forecastDate.getDate() + i);
                 const forecastedUnits = Math.max(0, Math.round(avgDailySales * (1 + demandChange / 100)));
                 forecast.push({ date: forecastDate.toISOString().split('T')[0], 'Forecasted Units': forecastedUnits });
-                
                 projectedInventory -= forecastedUnits;
                 if (i === adjustedLeadTime && purchaseRecommendation > 0) {
                     projectedInventory += purchaseRecommendation;
                 }
                 inventoryProjectionData.push({ date: forecastDate.toISOString().split('T')[0], inventory: Math.round(projectedInventory) });
             }
-            
             const annualDemand = avgDailySales * 365;
-            const avgInventoryLevel = (maxStock + safetyStock) / 2;
-            const inventoryTurns = avgInventoryLevel > 0 ? (annualDemand * skuData[0].unitCost) / (avgInventoryLevel * skuData[0].unitCost) : 0;
-            
+            const avgInventoryValue = ((maxStock + safetyStock) / 2) * skuData[0].unitCost;
+            const annualCOGS = annualDemand * skuData[0].unitCost;
+            const inventoryTurns = avgInventoryValue > 0 ? annualCOGS / avgInventoryValue : 0;
             results[sku] = {
                 safetyStock, reorderPoint, maxStock, purchaseRecommendation,
                 forecast, inventoryProjectionData, inventoryTurns,
@@ -282,10 +268,10 @@ export default function App() {
                 unitPrice: skuData[0].unitPrice
             };
         });
-        
         return results;
     }, [data, activeSKUs, serviceLevel, leadTimeChange, demandChange]);
     
+    // Memoized selectors for UI
     const skuList = useMemo(() => {
         const categories = data.reduce((acc, item) => {
             if (!acc[item.parentItem]) acc[item.parentItem] = new Set();
@@ -324,6 +310,28 @@ export default function App() {
             return new Date(a.date) - new Date(b.date);
         });
     }, [processedData]);
+    
+    const kpiValues = useMemo(() => {
+        if (!processedData) return { revenue: '0.0M', turns: 'N/A', purchaseValue: '0.0k', reorderItems: 0 };
+        
+        const totalRevenue = Object.values(processedData).reduce((total, skuMetrics) => {
+             const dailySales = skuMetrics.forecast.length > 0 ? skuMetrics.forecast[0]['Forecasted Units'] : 0;
+             const dailyRevenue = dailySales * skuMetrics.unitPrice;
+             return total + (dailyRevenue * 120);
+        }, 0);
+
+        const avgTurns = Object.values(processedData).reduce((sum, m) => sum + m.inventoryTurns, 0) / Object.keys(processedData).length;
+        
+        const purchaseValue = filteredPurchaseRecommendations.reduce((sum, r) => sum + (r.purchaseRecommendation * r.unitCost), 0);
+
+        return {
+            revenue: `$${(totalRevenue / 1000000).toFixed(1)}M`,
+            turns: isNaN(avgTurns) ? 'N/A' : avgTurns.toFixed(1),
+            purchaseValue: `$${(purchaseValue / 1000).toFixed(1)}k`,
+            reorderItems: filteredPurchaseRecommendations.length
+        }
+    }, [processedData, filteredPurchaseRecommendations]);
+
 
     const toggleSKU = (sku) => {
         setActiveSKUs(prev => prev.includes(sku) ? prev.filter(s => s !== sku) : [...prev, sku]);
@@ -363,7 +371,7 @@ export default function App() {
                         <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
                     </div>
 
-                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleAuthClick} disabled={!gapiReady || !gisReady || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
@@ -430,17 +438,10 @@ export default function App() {
             </aside>
             <main className="flex-1 p-6 overflow-y-auto">
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                    <KPICard title="Projected Revenue (120d)" value={
-                        processedData ? 
-                        (Object.values(processedData).reduce((totalRevenue, skuMetrics) => {
-                            const dailyRevenue = (skuMetrics.forecast[0]?.['Forecasted Units'] || 0) * (skuMetrics.unitPrice || 0);
-                            return totalRevenue + (dailyRevenue * 120);
-                        }, 0) / 1000000).toFixed(1) + 'M'
-                        : '0.0M'
-                    } unit="$" icon={<DollarSign className="text-green-500"/>} helpText="Total forecasted revenue for selected SKUs over the next 120 days."/>
-                    <KPICard title="Avg. Inventory Turns" value={processedData && activeSKUs.length > 0 ? (Object.values(processedData).reduce((s, m) => s+m.inventoryTurns, 0) / activeSKUs.length).toFixed(1) : 'N/A'} icon={<Repeat className="text-blue-500"/>} helpText="How many times inventory is sold and replaced over a year. Higher is better." />
-                    <KPICard title="Total Purchase Value" value={(filteredPurchaseRecommendations.reduce((s,r) => s + (r.purchaseRecommendation * r.unitCost), 0) / 1000).toFixed(1) + 'k'} unit="$" icon={<Package className="text-yellow-500"/>} helpText="Total cost of recommended purchases for the filtered vendor." />
-                    <KPICard title="Items to Reorder" value={filteredPurchaseRecommendations.length} icon={<ShoppingCart className="text-red-500"/>} helpText="Number of SKUs for the filtered vendor that have fallen below their reorder point."/>
+                    <KPICard title="Projected Revenue (120d)" value={kpiValues.revenue} icon={<DollarSign className="text-green-500"/>} helpText="Total forecasted revenue for selected SKUs over the next 120 days."/>
+                    <KPICard title="Avg. Inventory Turns" value={kpiValues.turns} icon={<Repeat className="text-blue-500"/>} helpText="How many times inventory is sold and replaced over a year. Higher is better." />
+                    <KPICard title="Total Purchase Value" value={kpiValues.purchaseValue} icon={<Package className="text-yellow-500"/>} helpText="Total cost of recommended purchases for the filtered vendor." />
+                    <KPICard title="Items to Reorder" value={kpiValues.reorderItems} icon={<ShoppingCart className="text-red-500"/>} helpText="Number of SKUs for the filtered vendor that have fallen below their reorder point."/>
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
