@@ -60,6 +60,8 @@ export default function App() {
     const [clientId, setClientId] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
+    const [gapiReady, setGapiReady] = useState(false);
+    const [gisReady, setGisReady] = useState(false);
     const [authClientReady, setAuthClientReady] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [activeSKUs, setActiveSKUs] = useState([]);
@@ -80,41 +82,38 @@ export default function App() {
         }
     }, []);
 
-    // NEW SEQUENTIAL SCRIPT LOADING
+    // Load Google API scripts
     useEffect(() => {
         const scriptGapi = document.createElement('script');
         scriptGapi.src = 'https://apis.google.com/js/api.js';
         scriptGapi.async = true;
         scriptGapi.defer = true;
-        
-        scriptGapi.onload = () => {
-            window.gapi.load('client', () => {
-                // GAPI client is loaded, now load GIS
-                const scriptGis = document.createElement('script');
-                scriptGis.src = 'https://accounts.google.com/gsi/client';
-                scriptGis.async = true;
-                scriptGis.defer = true;
-                scriptGis.onload = () => {
-                    // Both scripts are loaded sequentially and ready.
-                    // The auth client will be initialized in the next useEffect.
-                };
-                document.body.appendChild(scriptGis);
-            });
-        };
+        scriptGapi.onload = () => window.gapi.load('client', () => setGapiReady(true));
         document.body.appendChild(scriptGapi);
 
+        const scriptGis = document.createElement('script');
+        scriptGis.src = 'https://accounts.google.com/gsi/client';
+        scriptGis.async = true;
+        scriptGis.defer = true;
+        scriptGis.onload = () => setGisReady(true);
+        document.body.appendChild(scriptGis);
+
+        return () => {
+            document.body.removeChild(scriptGapi);
+            document.body.removeChild(scriptGis);
+        };
     }, []);
     
-    // Initialize auth client once scripts are ready and credentials exist
+    // Initialize auth client when scripts are ready AND credentials exist
     useEffect(() => {
-        if (window.gapi && window.google && clientId && apiKey) {
+        if (gapiReady && gisReady && clientId && apiKey) {
             try {
                 tokenClient.current = window.google.accounts.oauth2.initTokenClient({
                     client_id: clientId,
                     scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
                     callback: async (tokenResponse) => {
                         if (tokenResponse.error) {
-                            setError(`Authorization Error: ${tokenResponse.error_description}`);
+                            setError(`Authorization Error: ${tokenResponse.error_description || 'Check console'}`);
                             setIsAuthorized(false);
                             return;
                         }
@@ -134,7 +133,7 @@ export default function App() {
         } else {
             setAuthClientReady(false);
         }
-    }, [clientId, apiKey]);
+    }, [gapiReady, gisReady, clientId, apiKey]);
 
 
     const handleAuthClick = useCallback(() => {
@@ -145,12 +144,12 @@ export default function App() {
             localStorage.removeItem('forecastAiCredsV2');
         }
 
-        if (authClientReady && tokenClient.current) {
+        if (tokenClient.current) {
             tokenClient.current.requestAccessToken({ prompt: 'consent' });
         } else {
             setError("Authentication client not ready. Please wait or check credentials.");
         }
-    }, [rememberMe, apiKey, clientId, sheetUrl, authClientReady]);
+    }, [rememberMe, apiKey, clientId, sheetUrl]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -322,7 +321,8 @@ export default function App() {
              return total + (dailyRevenue * 120);
         }, 0);
 
-        const avgTurns = Object.values(processedData).reduce((sum, m) => sum + m.inventoryTurns, 0) / Object.keys(processedData).length;
+        const activeSKUsCount = Object.keys(processedData).length;
+        const avgTurns = activeSKUsCount > 0 ? Object.values(processedData).reduce((sum, m) => sum + m.inventoryTurns, 0) / activeSKUsCount : 0;
         
         const purchaseValue = filteredPurchaseRecommendations.reduce((sum, r) => sum + (r.purchaseRecommendation * r.unitCost), 0);
 
@@ -373,7 +373,7 @@ export default function App() {
                         <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
                     </div>
 
-                    <button onClick={handleAuthClick} disabled={!authClientReady || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleAuthClick} disabled={!authClientReady} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
