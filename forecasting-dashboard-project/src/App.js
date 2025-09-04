@@ -60,8 +60,8 @@ export default function App() {
     const [clientId, setClientId] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
-    const [gapiReady, setGapiReady] = useState(false);
-    const [gisReady, setGisReady] = useState(false);
+    const [gapiLoaded, setGapiLoaded] = useState(false);
+    const [gisLoaded, setGisLoaded] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [activeSKUs, setActiveSKUs] = useState([]);
     const [expandedCategories, setExpandedCategories] = useState({});
@@ -87,14 +87,14 @@ export default function App() {
         scriptGapi.src = 'https://apis.google.com/js/api.js';
         scriptGapi.async = true;
         scriptGapi.defer = true;
-        scriptGapi.onload = () => window.gapi.load('client', () => setGapiReady(true));
+        scriptGapi.onload = () => window.gapi.load('client', () => setGapiLoaded(true));
         document.body.appendChild(scriptGapi);
 
         const scriptGis = document.createElement('script');
         scriptGis.src = 'https://accounts.google.com/gsi/client';
         scriptGis.async = true;
         scriptGis.defer = true;
-        scriptGis.onload = () => setGisReady(true);
+        scriptGis.onload = () => setGisLoaded(true);
         document.body.appendChild(scriptGis);
 
         return () => {
@@ -103,52 +103,41 @@ export default function App() {
         };
     }, []);
     
-    // Initialize GIS Client once ready
-    useEffect(() => {
-        if (gapiReady && gisReady && clientId) {
-            try {
-                tokenClient.current = window.google.accounts.oauth2.initTokenClient({
-                    client_id: clientId,
-                    scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
-                    callback: async (tokenResponse) => {
-                        if (tokenResponse.error) {
-                            setError(`Authorization error: ${tokenResponse.error_description}`);
-                            setIsAuthorized(false);
-                            return;
-                        }
-                        try {
-                            await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
-                            setIsAuthorized(true);
-                        } catch (initErr) {
-                            setError("Failed to initialize Google API client. Check API Key.");
-                        }
-                    },
-                });
-            } catch (err) {
-                 setError("Failed to initialize Google Auth. Check Client ID.");
-            }
-        }
-    }, [gapiReady, gisReady, clientId, apiKey]);
-
-
+    // This is the stable, working authorization logic
     const handleAuthClick = useCallback(() => {
-        setError(null);
         if (rememberMe) {
             localStorage.setItem('forecastAiCredsV2', JSON.stringify({ apiKey, clientId, sheetUrl }));
         } else {
             localStorage.removeItem('forecastAiCredsV2');
         }
 
-        if (tokenClient.current) {
-            if (window.gapi.client.getToken() === null) {
+        if (gapiLoaded && gisLoaded && clientId) {
+            tokenClient.current = window.google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
+                callback: async (resp) => {
+                    if (resp.error) {
+                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`);
+                        setIsAuthorized(false);
+                        return;
+                    }
+                    try {
+                        await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
+                        setIsAuthorized(true);
+                    } catch (err) {
+                        setError("Failed to initialize Google API client. Check API Key.");
+                        console.error(err);
+                    }
+                },
+            });
+
+            if (!window.gapi.client.getToken()) {
                 tokenClient.current.requestAccessToken({ prompt: 'consent' });
             } else {
                 tokenClient.current.requestAccessToken({ prompt: '' });
             }
-        } else {
-            setError("Authentication client is not ready. Please wait a moment.");
         }
-    }, [rememberMe, apiKey, clientId, sheetUrl]);
+    }, [gapiLoaded, gisLoaded, clientId, rememberMe, apiKey, sheetUrl]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -371,7 +360,7 @@ export default function App() {
                         <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-300">Remember Credentials</label>
                     </div>
 
-                    <button onClick={handleAuthClick} disabled={!gapiReady || !gisReady || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
+                    <button onClick={handleAuthClick} disabled={!gapiLoaded || !gisLoaded || !apiKey || !clientId || !sheetUrl} className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
                         <LogIn className="mr-2 h-5 w-5"/>
                         Connect & Authorize
                     </button>
