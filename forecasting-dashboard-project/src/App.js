@@ -60,8 +60,6 @@ export default function App() {
     const [clientId, setClientId] = useState('');
     const [sheetUrl, setSheetUrl] = useState('');
     const [isAuthorized, setIsAuthorized] = useState(false);
-    const [gapiReady, setGapiReady] = useState(false);
-    const [gisReady, setGisReady] = useState(false);
     const [authClientReady, setAuthClientReady] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
     const [activeSKUs, setActiveSKUs] = useState([]);
@@ -82,31 +80,34 @@ export default function App() {
         }
     }, []);
 
-    // Load Google API scripts
+    // NEW SEQUENTIAL SCRIPT LOADING
     useEffect(() => {
         const scriptGapi = document.createElement('script');
         scriptGapi.src = 'https://apis.google.com/js/api.js';
         scriptGapi.async = true;
         scriptGapi.defer = true;
-        scriptGapi.onload = () => window.gapi.load('client', () => setGapiReady(true));
+        
+        scriptGapi.onload = () => {
+            window.gapi.load('client', () => {
+                // GAPI client is loaded, now load GIS
+                const scriptGis = document.createElement('script');
+                scriptGis.src = 'https://accounts.google.com/gsi/client';
+                scriptGis.async = true;
+                scriptGis.defer = true;
+                scriptGis.onload = () => {
+                    // Both scripts are loaded sequentially and ready.
+                    // The auth client will be initialized in the next useEffect.
+                };
+                document.body.appendChild(scriptGis);
+            });
+        };
         document.body.appendChild(scriptGapi);
 
-        const scriptGis = document.createElement('script');
-        scriptGis.src = 'https://accounts.google.com/gsi/client';
-        scriptGis.async = true;
-        scriptGis.defer = true;
-        scriptGis.onload = () => setGisReady(true);
-        document.body.appendChild(scriptGis);
-
-        return () => {
-            document.body.removeChild(scriptGapi);
-            document.body.removeChild(scriptGis);
-        };
     }, []);
     
-    // NEW ROBUST AUTH LOGIC: Initialize client when scripts are ready and credentials exist
+    // Initialize auth client once scripts are ready and credentials exist
     useEffect(() => {
-        if (gapiReady && gisReady && clientId && apiKey) {
+        if (window.gapi && window.google && clientId && apiKey) {
             try {
                 tokenClient.current = window.google.accounts.oauth2.initTokenClient({
                     client_id: clientId,
@@ -125,7 +126,7 @@ export default function App() {
                         }
                     },
                 });
-                setAuthClientReady(true); // Signal that the client is ready
+                setAuthClientReady(true);
             } catch (err) {
                  setError("Auth Client Error: Check Client ID.");
                  setAuthClientReady(false);
@@ -133,7 +134,7 @@ export default function App() {
         } else {
             setAuthClientReady(false);
         }
-    }, [gapiReady, gisReady, clientId, apiKey]);
+    }, [clientId, apiKey]);
 
 
     const handleAuthClick = useCallback(() => {
