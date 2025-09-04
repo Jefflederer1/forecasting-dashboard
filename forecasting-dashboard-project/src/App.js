@@ -120,35 +120,30 @@ export default function App() {
         }
     }, []);
 
-    const handleAuthClick = useCallback(async () => {
-        setError(null);
+    const handleAuthClick = useCallback(() => {
         if (rememberMe) {
             localStorage.setItem('forecastAiCredsV2', JSON.stringify({ apiKey, clientId, sheetUrl }));
         } else {
             localStorage.removeItem('forecastAiCredsV2');
         }
 
-        try {
-            await window.gapi.client.init({
-                apiKey: apiKey,
-                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
-            });
-        } catch (error) {
-            setError("Failed to initialize Google API. Check API Key.");
-            console.error("GAPI Init Error:", error);
-            return;
-        }
-
-        if (gisLoaded && clientId) {
+        if (gapiLoaded && gisLoaded && clientId) {
             tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
                 client_id: clientId,
                 scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
-                callback: (resp) => {
+                callback: async (resp) => {
                     if (resp.error) {
-                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`);
+                        setError(`Authorization error: ${resp.error_description || 'Please try again.'}`); 
+                        setIsAuthorized(false);
                         return;
                     }
-                    setIsAuthorized(true);
+                     try {
+                        await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
+                        setIsAuthorized(true);
+                    } catch (err) {
+                        setError("Failed to initialize Google API. Check API Key.");
+                        console.error(err);
+                    }
                 },
             });
 
@@ -158,7 +153,7 @@ export default function App() {
                 tokenClientRef.current.requestAccessToken({ prompt: '' });
             }
         }
-    }, [rememberMe, apiKey, clientId, sheetUrl, gisLoaded]);
+    }, [gapiLoaded, gisLoaded, clientId, rememberMe, apiKey, sheetUrl]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -172,7 +167,7 @@ export default function App() {
     // Fetch and process data after authorization
     useEffect(() => {
         const fetchData = async () => {
-            if (!isAuthorized || !sheetUrl) return;
+            if (!isAuthorized || !sheetUrl || !apiKey) return;
             try {
                 const spreadsheetIdMatch = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
                 if (!spreadsheetIdMatch) { setError("Invalid Google Sheet URL format."); return; }
@@ -198,7 +193,7 @@ export default function App() {
             }
         };
         fetchData();
-    }, [isAuthorized, sheetUrl]);
+    }, [isAuthorized, sheetUrl, apiKey]);
     
     // Perform ABC Analysis
     useEffect(() => {
