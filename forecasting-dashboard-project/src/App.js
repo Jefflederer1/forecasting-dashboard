@@ -158,7 +158,7 @@ export default function App() {
                 tokenClientRef.current.requestAccessToken({ prompt: '' });
             }
         }
-    }, [rememberMe, apiKey, clientId, sheetUrl, gisLoaded, gapiLoaded]);
+    }, [rememberMe, apiKey, clientId, sheetUrl, gisLoaded]);
     
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
