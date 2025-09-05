@@ -103,11 +103,12 @@ export default function App() {
           scriptGis.defer = true;
           scriptGis.onload = () => setGisReady(true);
           document.body.appendChild(scriptGis);
+        } else {
+            if (window.google?.accounts?.oauth2) setGisReady(true);
         }
       };
       document.body.appendChild(scriptGapi);
     } else {
-      // if already present (e.g., StrictMode), set flags if libs are available
       if (window.gapi?.client) setGapiReady(true);
       if (window.google?.accounts?.oauth2) setGisReady(true);
     }
@@ -122,7 +123,7 @@ export default function App() {
     }
     try {
       tokenClient.current = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
+        client_id: clientId.trim(), // Ensure no whitespace
         scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
         callback: async (tokenResponse) => {
           if (tokenResponse.error) {
@@ -159,6 +160,17 @@ export default function App() {
       setError('Authentication client not ready. Please wait or check credentials.');
     }
   }, [rememberMe, apiKey, clientId, sheetUrl, authClientReady]);
+
+  // DEFINITIVE FIX: Robust input handler for Client ID
+  const handleClientIdChange = (e) => {
+      let value = e.target.value;
+      // Find the first space, if any, and take the text before it.
+      const spaceIndex = value.indexOf(' ');
+      if (spaceIndex !== -1) {
+          value = value.substring(0, spaceIndex);
+      }
+      setClientId(value.trim());
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('forecastAiCredsV2');
@@ -367,7 +379,7 @@ export default function App() {
             </div>
             <div>
               <label htmlFor="clientId" className="text-sm font-medium text-gray-300">Google Client ID</label>
-              <input type="password" id="clientId" name="clientId" value={clientId} onChange={e => setClientId(e.target.value)} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
+              <input type="password" id="clientId" name="clientId" value={clientId} onChange={handleClientIdChange} className="w-full mt-1 p-2 bg-gray-700 rounded-md border border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" />
             </div>
             <div>
               <label htmlFor="sheetUrl" className="text-sm font-medium text-gray-300">Google Sheet URL</label>
