@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Sliders, DollarSign, Package, TrendingUp, ChevronDown, ChevronRight, LogIn, LogOut, Filter, Activity, Repeat, ShoppingCart } from 'lucide-react';
 
