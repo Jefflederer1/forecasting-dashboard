@@ -9,6 +9,7 @@ const SERVICE_LEVEL_Z = { 90: 1.28, 95: 1.645, 98: 2.05, 99: 2.33 };
 const robustParseFloat = (value) => {
     if (typeof value === 'number') return value;
     if (typeof value !== 'string') return 0;
+    // Remove currency symbols, commas, and trim whitespace
     const cleaned = value.replace(/[^0-9.-]+/g, "");
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
@@ -16,6 +17,7 @@ const robustParseFloat = (value) => {
 const robustParseInt = (value) => {
     if (typeof value === 'number') return Math.round(value);
     if (typeof value !== 'string') return 0;
+    // Remove commas and trim whitespace
     const cleaned = value.replace(/[^0-9-]+/g, "");
     const num = parseInt(cleaned, 10);
     return isNaN(num) ? 0 : num;
@@ -88,7 +90,7 @@ export default function App() {
     const [demandChange, setDemandChange] = useState(0);
     const tokenClient = useRef(null);
 
-    // NEW: script readiness flags
+    // script readiness flags
     const [gapiReady, setGapiReady] = useState(false);
     const [gisReady, setGisReady] = useState(false);
 
@@ -101,8 +103,9 @@ export default function App() {
         }
     }, []);
 
-    // NEW SEQUENTIAL SCRIPT LOADING with ids + flags (avoids double injection / race)
+    // SEQUENTIAL SCRIPT LOADING to prevent race conditions
     useEffect(() => {
+        // Load GAPI script
         if (!document.getElementById('gapi-script')) {
             const scriptGapi = document.createElement('script');
             scriptGapi.id = 'gapi-script';
@@ -111,35 +114,35 @@ export default function App() {
             scriptGapi.defer = true;
             scriptGapi.onload = () => {
                 window.gapi.load('client', () => setGapiReady(true));
-                // now load GIS
-                if (!document.getElementById('gis-script')) {
-                    const scriptGis = document.createElement('script');
-                    scriptGis.id = 'gis-script';
-                    scriptGis.src = 'https://accounts.google.com/gsi/client';
-                    scriptGis.async = true;
-                    scriptGis.defer = true;
-                    scriptGis.onload = () => setGisReady(true);
-                    document.body.appendChild(scriptGis);
-                }
             };
             document.body.appendChild(scriptGapi);
-        } else {
-            // if already present (e.g., StrictMode), set flags if libs are available
-            if (window.gapi?.client) setGapiReady(true);
-            if (window.google?.accounts?.oauth2) setGisReady(true);
+        } else if (window.gapi?.client) {
+            setGapiReady(true);
+        }
+
+        // Load GIS script
+        if (!document.getElementById('gis-script')) {
+            const scriptGis = document.createElement('script');
+            scriptGis.id = 'gis-script';
+            scriptGis.src = 'https://accounts.google.com/gsi/client';
+            scriptGis.async = true;
+            scriptGis.defer = true;
+            scriptGis.onload = () => setGisReady(true);
+            document.body.appendChild(scriptGis);
+        } else if (window.google?.accounts?.oauth2) {
+            setGisReady(true);
         }
     }, []);
 
     // Initialize auth client once scripts are ready AND creds exist
     useEffect(() => {
-        if (!gapiReady || !gisReady) return;
-        if (!clientId || !apiKey) {
+        if (!gapiReady || !gisReady || !clientId || !apiKey) {
             setAuthClientReady(false);
             return;
         }
         try {
             tokenClient.current = window.google.accounts.oauth2.initTokenClient({
-                client_id: clientId,
+                client_id: clientId.trim(),
                 scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
                 callback: async (tokenResponse) => {
                     if (tokenResponse.error) {
@@ -151,13 +154,13 @@ export default function App() {
                         await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
                         setIsAuthorized(true);
                     } catch (initErr) {
-                        setError('API Init Error: Check API Key.');
+                        setError('API Initialization Error: Check your API Key.');
                     }
                 },
             });
             setAuthClientReady(true);
         } catch (err) {
-            setError('Auth Client Error: Check Client ID.');
+            setError('Authentication Client Error: Check your Client ID.');
             setAuthClientReady(false);
         }
     }, [gapiReady, gisReady, clientId, apiKey]);
@@ -177,7 +180,6 @@ export default function App() {
         }
     }, [rememberMe, apiKey, clientId, sheetUrl, authClientReady]);
     
-    // DEFINITIVE FIX: Re-add the missing function definition
       const handleClientIdChange = (e) => {
           let value = e.target.value;
           const spaceIndex = value.indexOf(' ');
@@ -196,7 +198,7 @@ export default function App() {
         setSheetUrl('');
     };
 
-    // MERGED: Fetch and process data after authorization with robust parsing and error handling
+    // Fetch and process data after authorization with robust parsing and error handling
     useEffect(() => {
         const fetchData = async () => {
             if (!isAuthorized || !sheetUrl) return;
@@ -240,6 +242,7 @@ export default function App() {
                             leadTime: robustParseInt(row[9]),
                         };
                     } catch(parseError) {
+                        // This will now provide a specific error message to the user
                         throw new Error(`Data format error in row ${rowNum}. Please check the numeric columns.`);
                     }
                 }).filter(Boolean);
@@ -248,6 +251,7 @@ export default function App() {
                 setError(null);
 
             } catch (err) {
+                // Display the actual error from Google's API if available
                 const apiError = err.result?.error?.message;
                 setError(apiError || err.message || "Fetch Error. Check sheet permissions and URL.");
                 console.error(err);
