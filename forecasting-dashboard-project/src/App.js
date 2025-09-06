@@ -90,7 +90,7 @@ export default function App() {
     const [demandChange, setDemandChange] = useState(0);
     const tokenClient = useRef(null);
 
-    // NEW: script readiness flags
+    // script readiness flags
     const [gapiReady, setGapiReady] = useState(false);
     const [gisReady, setGisReady] = useState(false);
 
@@ -103,8 +103,9 @@ export default function App() {
         }
     }, []);
 
-    // NEW SEQUENTIAL SCRIPT LOADING with ids + flags (avoids double injection / race)
+    // SEQUENTIAL SCRIPT LOADING to prevent race conditions
     useEffect(() => {
+        // Load GAPI script
         if (!document.getElementById('gapi-script')) {
             const scriptGapi = document.createElement('script');
             scriptGapi.id = 'gapi-script';
@@ -119,6 +120,7 @@ export default function App() {
             setGapiReady(true);
         }
 
+        // Load GIS script
         if (!document.getElementById('gis-script')) {
             const scriptGis = document.createElement('script');
             scriptGis.id = 'gis-script';
@@ -240,16 +242,14 @@ export default function App() {
                             leadTime: robustParseInt(row[9]),
                         };
                     } catch(parseError) {
-                        // This will now provide a specific error message to the user
                         throw new Error(`Data format error in row ${rowNum}. Please check the numeric columns.`);
                     }
-                }).filter(Boolean); // Filter out any skipped empty rows
+                }).filter(Boolean);
                 
                 setData(parsedData);
                 setError(null);
 
             } catch (err) {
-                // Display the actual error from Google's API if available
                 const apiError = err.result?.error?.message;
                 setError(apiError || err.message || "Fetch Error. Check sheet permissions and URL.");
                 console.error(err);
