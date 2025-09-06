@@ -176,6 +176,16 @@ export default function App() {
             setError('Authentication client not ready. Please wait or check credentials.');
         }
     }, [rememberMe, apiKey, clientId, sheetUrl, authClientReady]);
+    
+    // DEFINITIVE FIX: Re-add the missing function definition
+      const handleClientIdChange = (e) => {
+          let value = e.target.value;
+          const spaceIndex = value.indexOf(' ');
+          if (spaceIndex !== -1) {
+              value = value.substring(0, spaceIndex);
+          }
+          setClientId(value.trim());
+      };
 
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -431,7 +441,7 @@ export default function App() {
                     
                     <button
                         onClick={handleAuthClick}
-                        disabled={!authClientReady}
+                        disabled={!authClientReady || !sheetUrl || !apiKey || !clientId}
                         className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                     >
                         <LogIn className="mr-2 h-5 w-5"/>
