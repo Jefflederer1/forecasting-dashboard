@@ -9,7 +9,6 @@ const SERVICE_LEVEL_Z = { 90: 1.28, 95: 1.645, 98: 2.05, 99: 2.33 };
 const robustParseFloat = (value) => {
     if (typeof value === 'number') return value;
     if (typeof value !== 'string') return 0;
-    // Remove currency symbols, commas, and trim whitespace
     const cleaned = value.replace(/[^0-9.-]+/g, "");
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
@@ -17,7 +16,6 @@ const robustParseFloat = (value) => {
 const robustParseInt = (value) => {
     if (typeof value === 'number') return Math.round(value);
     if (typeof value !== 'string') return 0;
-    // Remove commas and trim whitespace
     const cleaned = value.replace(/[^0-9-]+/g, "");
     const num = parseInt(cleaned, 10);
     return isNaN(num) ? 0 : num;
@@ -90,7 +88,7 @@ export default function App() {
     const [demandChange, setDemandChange] = useState(0);
     const tokenClient = useRef(null);
 
-    // script readiness flags
+    // NEW: script readiness flags
     const [gapiReady, setGapiReady] = useState(false);
     const [gisReady, setGisReady] = useState(false);
 
@@ -103,9 +101,8 @@ export default function App() {
         }
     }, []);
 
-    // SEQUENTIAL SCRIPT LOADING to prevent race conditions
+    // NEW SEQUENTIAL SCRIPT LOADING with ids + flags (avoids double injection / race)
     useEffect(() => {
-        // Load GAPI script
         if (!document.getElementById('gapi-script')) {
             const scriptGapi = document.createElement('script');
             scriptGapi.id = 'gapi-script';
@@ -114,35 +111,35 @@ export default function App() {
             scriptGapi.defer = true;
             scriptGapi.onload = () => {
                 window.gapi.load('client', () => setGapiReady(true));
+                // now load GIS
+                if (!document.getElementById('gis-script')) {
+                    const scriptGis = document.createElement('script');
+                    scriptGis.id = 'gis-script';
+                    scriptGis.src = 'https://accounts.google.com/gsi/client';
+                    scriptGis.async = true;
+                    scriptGis.defer = true;
+                    scriptGis.onload = () => setGisReady(true);
+                    document.body.appendChild(scriptGis);
+                }
             };
             document.body.appendChild(scriptGapi);
-        } else if (window.gapi?.client) {
-            setGapiReady(true);
-        }
-
-        // Load GIS script
-        if (!document.getElementById('gis-script')) {
-            const scriptGis = document.createElement('script');
-            scriptGis.id = 'gis-script';
-            scriptGis.src = 'https://accounts.google.com/gsi/client';
-            scriptGis.async = true;
-            scriptGis.defer = true;
-            scriptGis.onload = () => setGisReady(true);
-            document.body.appendChild(scriptGis);
-        } else if (window.google?.accounts?.oauth2) {
-            setGisReady(true);
+        } else {
+            // if already present (e.g., StrictMode), set flags if libs are available
+            if (window.gapi?.client) setGapiReady(true);
+            if (window.google?.accounts?.oauth2) setGisReady(true);
         }
     }, []);
 
     // Initialize auth client once scripts are ready AND creds exist
     useEffect(() => {
-        if (!gapiReady || !gisReady || !clientId || !apiKey) {
+        if (!gapiReady || !gisReady) return;
+        if (!clientId || !apiKey) {
             setAuthClientReady(false);
             return;
         }
         try {
             tokenClient.current = window.google.accounts.oauth2.initTokenClient({
-                client_id: clientId.trim(),
+                client_id: clientId,
                 scope: 'https://www.googleapis.com/auth/spreadsheets.readonly',
                 callback: async (tokenResponse) => {
                     if (tokenResponse.error) {
@@ -154,13 +151,13 @@ export default function App() {
                         await window.gapi.client.init({ apiKey, discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'] });
                         setIsAuthorized(true);
                     } catch (initErr) {
-                        setError('API Initialization Error: Check your API Key.');
+                        setError('API Init Error: Check API Key.');
                     }
                 },
             });
             setAuthClientReady(true);
         } catch (err) {
-            setError('Authentication Client Error: Check your Client ID.');
+            setError('Auth Client Error: Check Client ID.');
             setAuthClientReady(false);
         }
     }, [gapiReady, gisReady, clientId, apiKey]);
@@ -179,15 +176,6 @@ export default function App() {
             setError('Authentication client not ready. Please wait or check credentials.');
         }
     }, [rememberMe, apiKey, clientId, sheetUrl, authClientReady]);
-    
-      const handleClientIdChange = (e) => {
-          let value = e.target.value;
-          const spaceIndex = value.indexOf(' ');
-          if (spaceIndex !== -1) {
-              value = value.substring(0, spaceIndex);
-          }
-          setClientId(value.trim());
-      };
 
     const handleLogout = () => {
         localStorage.removeItem('forecastAiCredsV2');
@@ -198,7 +186,7 @@ export default function App() {
         setSheetUrl('');
     };
 
-    // Fetch and process data after authorization with robust parsing and error handling
+    // MERGED: Fetch and process data after authorization with robust parsing and error handling
     useEffect(() => {
         const fetchData = async () => {
             if (!isAuthorized || !sheetUrl) return;
@@ -443,7 +431,7 @@ export default function App() {
                     
                     <button
                         onClick={handleAuthClick}
-                        disabled={!authClientReady || !sheetUrl || !apiKey || !clientId}
+                        disabled={!authClientReady}
                         className="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                     >
                         <LogIn className="mr-2 h-5 w-5"/>
